@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Management System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <style>
+        .container { margin-top: 50px; }
+        .hidden { display: none; }
+        .drag-item { cursor: move; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">EMS</a>
+            <div class="navbar-nav ms-auto" id="nav-links">
+                <!-- Nav links will be dynamic based on login status -->
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="auth-section" class="hidden">
+            <div id="login-form" class="card p-4 mx-auto" style="max-width: 400px;">
+                <h3>Login</h3>
+                <input type="text" id="login-username" class="form-control mb-2" placeholder="Username">
+                <input type="password" id="login-password" class="form-control mb-2" placeholder="Password">
+                <button class="btn btn-primary" onclick="login()">Login</button>
+                <p class="mt-2">Don't have an account? <a href="#" onclick="showSection('register')">Register</a></p>
+            </div>
+            <div id="register-form" class="card p-4 mx-auto hidden" style="max-width: 400px;">
+                <h3>Register</h3>
+                <input type="text" id="reg-username" class="form-control mb-2" placeholder="Username">
+                <input type="email" id="reg-email" class="form-control mb-2" placeholder="Email">
+                <input type="password" id="reg-password" class="form-control mb-2" placeholder="Password">
+                <button class="btn btn-primary" onclick="register()">Register</button>
+                <p class="mt-2">Already have an account? <a href="#" onclick="showSection('login')">Login</a></p>
+            </div>
+        </div>
+
+        <div id="profile-section" class="hidden">
+            <div class="card p-4 mx-auto" style="max-width: 400px;">
+                <h3>Profile</h3>
+                <p id="profile-info"></p>
+                <h4>Change Password</h4>
+                <input type="password" id="old-password" class="form-control mb-2" placeholder="Old Password">
+                <input type="password" id="new-password" class="form-control mb-2" placeholder="New Password">
+                <button class="btn btn-warning" onclick="changePassword()">Change Password</button>
+            </div>
+        </div>
+
+        <div id="form-design-section" class="hidden">
+            <h3>Form Design</h3>
+            <div class="mb-3">
+                <input type="text" id="form-name" class="form-control" placeholder="Form Name">
+            </div>
+            <div id="fields-list" class="list-group mb-3">
+                <!-- Fields added dynamically -->
+            </div>
+            <button class="btn btn-success" onclick="addField()">Add Field</button>
+            <button class="btn btn-primary" onclick="saveForm()">Save Form</button>
+            <hr>
+            <h4>Created Forms</h4>
+            <div id="forms-list" class="list-group"></div>
+        </div>
+
+        <div id="employee-management-section" class="hidden">
+            <h3>Employee Management</h3>
+            <div id="employee-form-container">
+                <!-- Selected form will be rendered here -->
+            </div>
+            <hr>
+            <h3>Employee Listing</h3>
+            <div class="mb-3">
+                <input type="text" id="search-input" class="form-control" placeholder="Search..." onkeyup="listEmployees()">
+            </div>
+            <table class="table">
+                <thead>
+                    <tr id="table-head"></tr>
+                </thead>
+                <tbody id="employee-list-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let accessToken = localStorage.getItem('access');
+        let refresh = localStorage.getItem('refresh');
+
+        axios.defaults.baseURL = '/api/';
+
+        function updateNav() {
+            const nav = document.getElementById('nav-links');
+            if (accessToken) {
+                nav.innerHTML = `
+                    <a class="nav-link" href="#" onclick="showSection('profile')">Profile</a>
+                    <a class="nav-link" href="#" onclick="showSection('form-design')">Form Design</a>
+                    <a class="nav-link" href="#" onclick="showSection('employee-management')">Employees</a>
+                    <a class="nav-link" href="#" onclick="logout()">Logout</a>
+                `;
+            } else {
+                nav.innerHTML = `
+                    <a class="nav-link" href="#" onclick="showSection('login')">Login</a>
+                    <a class="nav-link" href="#" onclick="showSection('register')">Register</a>
+                `;
+            }
+        }
+
+        function showSection(sectionId) {
+            document.querySelectorAll('.container > div').forEach(div => div.classList.add('hidden'));
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+
+            if (sectionId === 'login') {
+                document.getElementById('auth-section').classList.remove('hidden');
+                document.getElementById('login-form').classList.remove('hidden');
+            } else if (sectionId === 'register') {
+                document.getElementById('auth-section').classList.remove('hidden');
+                document.getElementById('register-form').classList.remove('hidden');
+            } else {
+                document.getElementById(sectionId + '-section').classList.remove('hidden');
+                if (sectionId === 'profile') loadProfile();
+                if (sectionId === 'form-design') listForms();
+                if (sectionId === 'employee-management') listEmployees();
+            }
+            updateNav();
+        }
+
+        async function login() {
+            try {
+                const res = await axios.post('login/', {
+                    username: document.getElementById('login-username').value,
+                    password: document.getElementById('login-password').value
+                });
+                localStorage.setItem('access', res.data.access);
+                localStorage.setItem('refresh', res.data.refresh);
+                accessToken = res.data.access;
+                axios.defaults.headers.common['Authorization'] = 'Bearer ' + accessToken;
+                showSection('profile');
+            } catch (err) { alert('Login failed'); }
+        }
+
+        async function register() {
+            try {
+                await axios.post('register/', {
+                    username: document.getElementById('reg-username').value,
+                    email: document.getElementById('reg-email').value,
+                    password: document.getElementById('reg-password').value
+                });
+                alert('Registration successful');
+                showSection('login');
+            } catch (err) { alert('Registration failed'); }
+        }
+
+        function logout() {
+            localStorage.clear();
+            accessToken = null;
+            delete axios.defaults.headers.common['Authorization'];
+            showSection('login');
+        }
+
+        async function loadProfile() {
+            try {
+                const res = await axios.get('profile/');
+                document.getElementById('profile-info').innerText = `Username: ${res.data.username}\nEmail: ${res.data.email}`;
+            } catch (err) { logout(); }
+        }
+
+        async function changePassword() {
+            try {
+                const res = await axios.post('change-password/', {
+                    old_password: document.getElementById('old-password').value,
+                    new_password: document.getElementById('new-password').value
+                });
+                alert(res.data.msg || 'Password changed successfully');
+                document.getElementById('old-password').value = '';
+                document.getElementById('new-password').value = '';
+            } catch (err) { 
+                const msg = err.response?.data?.error || 'Failed to change password';
+                alert(msg); 
+            }
+        }
+
+        // Form Design
+        let dynamicFields = [];
+        function addField() {
+            const id = Date.now();
+            const div = document.createElement('div');
+            div.className = 'list-group-item drag-item d-flex gap-2 align-items-center';
+            div.dataset.id = id;
+            div.innerHTML = `
+                <input type="text" class="form-control label-input" placeholder="Label">
+                <select class="form-select type-select">
+                    <option value="text">Text</option>
+                    <option value="number">Number</option>
+                    <option value="date">Date</option>
+                    <option value="password">Password</option>
+                </select>
+                <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>
+            `;
+            document.getElementById('fields-list').appendChild(div);
+        }
+
+        new Sortable(document.getElementById('fields-list'), { animation: 150 });
+
+        async function saveForm() {
+            const name = document.getElementById('form-name').value;
+            const fieldElements = document.querySelectorAll('#fields-list .list-group-item');
+            const fields = Array.from(fieldElements).map((el, index) => ({
+                label: el.querySelector('.label-input').value,
+                field_type: el.querySelector('.type-select').value,
+                order: index
+            }));
+
+            try {
+                const formRes = await axios.post('forms/', { name });
+                for (const field of fields) {
+                    await axios.post('fields/', { ...field, form: formRes.data.id });
+                }
+                alert('Form saved');
+                document.getElementById('form-name').value = '';
+                document.getElementById('fields-list').innerHTML = '';
+                listForms();
+            } catch (err) { alert('Failed'); }
+        }
+
+        async function listForms() {
+            const res = await axios.get('forms/');
+            const list = document.getElementById('forms-list');
+            list.innerHTML = '';
+            res.data.forEach(form => {
+                const btn = document.createElement('button');
+                btn.className = 'list-group-item list-group-item-action';
+                btn.innerText = form.name;
+                btn.onclick = () => selectForm(form);
+                list.appendChild(btn);
+            });
+        }
+
+        // Employee Management
+        let selectedForm = null;
+        async function selectForm(form) {
+            selectedForm = form;
+            const container = document.getElementById('employee-form-container');
+            container.innerHTML = `<h4>Create Employee (${form.name})</h4>`;
+            container.innerHTML += `<input type="text" id="emp-name" class="form-control mb-2" placeholder="Employee Name">`;
+            form.fields.forEach(f => {
+                container.innerHTML += `<div class="mb-2">
+                    <label>${f.label}</label>
+                    <input type="${f.field_type}" class="form-control emp-dynamic-field" data-id="${f.id}">
+                </div>`;
+            });
+            container.innerHTML += `<button class="btn btn-success" onclick="createEmployee()">Create Employee</button>`;
+            showSection('employee-management');
+        }
+
+        async function createEmployee() {
+            const name = document.getElementById('emp-name').value;
+            const fieldInputs = document.querySelectorAll('.emp-dynamic-field');
+            const data = Array.from(fieldInputs).map(input => ({
+                field: input.dataset.id,
+                value: input.value
+            }));
+
+            try {
+                await axios.post('employees/', { name, data });
+                alert('Employee created');
+                listEmployees();
+            } catch (err) { alert('Failed'); }
+        }
+
+        async function listEmployees() {
+            const res = await axios.get('employees/');
+            const search = document.getElementById('search-input').value.toLowerCase();
+            const body = document.getElementById('employee-list-body');
+            const head = document.getElementById('table-head');
+            body.innerHTML = '';
+            head.innerHTML = '<th>Name</th>';
+
+            const filteredEmployees = res.data.filter(emp => 
+                emp.name.toLowerCase().includes(search) || 
+                emp.data.some(d => d.value.toLowerCase().includes(search))
+            );
+
+            if (filteredEmployees.length > 0) {
+                // Determine headers from the first employee's data
+                const firstEmp = filteredEmployees[0];
+                firstEmp.data.forEach(d => {
+                    const th = document.createElement('th');
+                    th.innerText = d.field_label;
+                    head.appendChild(th);
+                });
+                head.innerHTML += '<th>Actions</th>';
+            }
+
+            filteredEmployees.forEach(emp => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${emp.name}</td>`;
+                emp.data.forEach(d => {
+                    tr.innerHTML += `<td>${d.value}</td>`;
+                });
+                tr.innerHTML += `<td><button class="btn btn-danger btn-sm" onclick="deleteEmployee(${emp.id})">Delete</button></td>`;
+                body.appendChild(tr);
+            });
+        }
+
+        async function deleteEmployee(id) {
+            if (confirm('Delete?')) {
+                await axios.delete(`employees/${id}/`);
+                listEmployees();
+            }
+        }
+
+        if (accessToken) {
+            axios.defaults.headers.common['Authorization'] = 'Bearer ' + accessToken;
+            showSection('profile');
+        } else {
+            showSection('login');
+        }
+    </script>
+</body>
+</html>
